@@ -17,8 +17,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // 🔒 บังคับใช้ HTTPS ทุกกรณีเมื่อเข้าผ่าน Cloudflare Tunnel เพื่อไม่ให้ Session / CSRF หลุด
+        // 🔒 บังคับใช้ HTTPS บน Production หรือเมื่อต่อผ่าน Reverse Proxy (Render / Cloudflare)
         if (
+            app()->environment('production') ||
             (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
             (isset($_SERVER['HTTP_HOST']) && str_contains($_SERVER['HTTP_HOST'], 'trycloudflare.com')) ||
             request()->header('x-forwarded-proto') === 'https'
@@ -26,10 +27,17 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // แชร์ค่า settings ไปยังทุกหน้า
-        if (Schema::hasTable('settings')) {
-            $settings = Setting::pluck('value', 'key')->toArray();
-            View::share('settings', $settings);
+        // 🛡️ แชร์ค่า settings ไปยังทุกหน้า พร้อมป้องกัน Error หาก Database ยังเชื่อมต่อไม่ได้
+        try {
+            if (Schema::hasTable('settings')) {
+                $settings = Setting::pluck('value', 'key')->toArray();
+                View::share('settings', $settings);
+            } else {
+                View::share('settings', []);
+            }
+        } catch (\Throwable $e) {
+            // หากต่อ Database ไม่ติด จะส่ง array ว่างไปแทน ทำให้เว็บไม่แครชเป็น Error 500
+            View::share('settings', []);
         }
     }
 }
